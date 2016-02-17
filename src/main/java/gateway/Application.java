@@ -15,22 +15,36 @@
  **/
 package gateway;
 
+import javax.servlet.Filter;
+
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.boot.context.web.SpringBootServletInitializer;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.ComponentScan;
+import org.springframework.security.authentication.AuthenticationManager;
+import gateway.auth.rest.RestSecurityFilter;
 
 @SpringBootApplication
 @ComponentScan("gateway,env")
 public class Application extends SpringBootServletInitializer {
-	
-	@Override
-	protected SpringApplicationBuilder configure(SpringApplicationBuilder builder) {
-		return builder.sources(Application.class);
-	}
 
-	public static void main(String[] args) {
-		SpringApplication.run(Application.class, args);
-	}
+    @Autowired
+    public AuthenticationManager authenticationManager;
+
+    @Override
+    protected SpringApplicationBuilder configure(SpringApplicationBuilder builder) {
+	return builder.sources(Application.class);
+    }
+
+    public static void main(String[] args) {
+	SpringApplication.run(Application.class, args);
+    }
+
+    @Bean
+    public Filter getRestSecurityFilter() {
+	return new RestSecurityFilter(authenticationManager);
+    }
 }
