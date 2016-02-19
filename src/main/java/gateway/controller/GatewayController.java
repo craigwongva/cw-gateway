@@ -60,171 +60,175 @@ import com.fasterxml.jackson.core.JsonProcessingException;
  */
 @RestController
 public class GatewayController {
-	/**
-	 * The Kafka Producer that will send messages from this controller to the
-	 * Dispatcher. Initialized upon Controller startup.
-	 */
-	private Producer<String, String> producer;
-	@Value("${kafka.host}")
-	private String KAFKA_HOST;
-	@Value("${kafka.port}")
-	private String KAFKA_PORT;
-	@Value("${kafka.group}")
-	private String KAFKA_GROUP;
-	@Value("${dispatcher.host}")
-	private String DISPATCHER_HOST;
-	@Value("${dispatcher.port}")
-	private String DISPATCHER_PORT;
-	@Value("${amazons3.bucketname}")
-	private String AMAZONS3_BUCKET_NAME;
-	@Value("${amazons3.domain}")
-	private String AMAZONS3_DOMAIN;
+    /**
+     * The Kafka Producer that will send messages from this controller to the
+     * Dispatcher. Initialized upon Controller startup.
+     */
+    private Producer<String, String> producer;
+    @Value("${kafka.host}")
+    private String KAFKA_HOST;
+    @Value("${kafka.port}")
+    private String KAFKA_PORT;
+    @Value("${kafka.group}")
+    private String KAFKA_GROUP;
+    @Value("${dispatcher.host}")
+    private String DISPATCHER_HOST;
+    @Value("${dispatcher.port}")
+    private String DISPATCHER_PORT;
+    @Value("${amazons3.bucketname}")
+    private String AMAZONS3_BUCKET_NAME;
+    @Value("${amazons3.domain}")
+    private String AMAZONS3_DOMAIN;
 
-	/**
-	 * Initializing the Kafka Producer on Controller startup.
-	 */
-	@PostConstruct
-	public void init() {
-		producer = KafkaClientFactory.getProducer(KAFKA_HOST, KAFKA_PORT);
-	}
+    /**
+     * Initializing the Kafka Producer on Controller startup.
+     */
+    @PostConstruct
+    public void init() {
+	producer = KafkaClientFactory.getProducer(KAFKA_HOST, KAFKA_PORT);
+    }
 
-	@PreDestroy
-	public void cleanup() {
-		producer.close();
-	}
+    @PreDestroy
+    public void cleanup() {
+	producer.close();
+    }
 
-	/**
-	 * Handles an incoming Piazza Job request by passing it along from the
-	 * external users to the internal Piazza components.
-	 * 
-	 * @param json
-	 *            The JSON Payload
-	 * @return Response object.
-	 */
-	@RequestMapping(value = "/job", method = RequestMethod.POST)
-	public PiazzaResponse job(@RequestParam(required = true) String body,
-			@RequestParam(required = false) final MultipartFile file) {
+    /**
+     * Handles an incoming Piazza Job request by passing it along from the
+     * external users to the internal Piazza components.
+     * 
+     * @param json
+     *            The JSON Payload
+     * @return Response object.
+     */
+    @RequestMapping(value = "/job", method = RequestMethod.POST)
+    public PiazzaResponse job(@RequestParam(required = true) String body,
+	    @RequestParam(required = false) final MultipartFile file) {
 
 		// Deserialize the incoming JSON to Request Model objects
-		PiazzaJobRequest request;
-		try {
-			request = JobMessageFactory.parseRequestJson(body);
-		} catch (Exception exception) {
-			return new ErrorResponse(null, "Error Parsing JSON: " + exception.getMessage(), "Gateway");
-		}
+//		PiazzaJobRequest request;
+//		try {
+//			request = JobMessageFactory.parseRequestJson(body);
+//		} catch (Exception exception) {
+//			return new ErrorResponse(null, "Error Parsing JSON: " + exception.getMessage(), "Gateway");
+//		}
 
 		// Authenticate and Authorize the request
-		try {
-			AuthConnector.verifyAuth(request);
-		} catch (SecurityException securityEx) {
-			return new ErrorResponse(null, "Authentication Error", "Gateway");
-		}
+//		try {
+//			AuthConnector.verifyAuth(request);
+//		} catch (SecurityException securityEx) {
+//			return new ErrorResponse(null, "Authentication Error", "Gateway");
+//		}
 
+		System.out.println("Yup");
+		return new PiazzaResponse();
 		// Determine if this Job is processed via synchronous REST, or via Kafka
 		// message queues.
-		if ((request.jobType instanceof GetJob) || (request.jobType instanceof GetResource)) {
-			return sendRequestToDispatcherViaRest(request);
-		} else {
-			return sendRequestToDispatcherViaKafka(request, file);
-		}
+//		if ((request.jobType instanceof GetJob) || (request.jobType instanceof GetResource)) {
+//			return sendRequestToDispatcherViaRest(request);
+//		} else {
+//			return sendRequestToDispatcherViaKafka(request, file);
+//		}
+    }
+
+    /**
+     * Forwards the Job request along to internal Piazza components via
+     * synchronous REST calls. This is for cases where the Job is meant to be
+     * processed synchronously and the user wants a response immediately for
+     * their request.
+     * 
+     * @param request
+     * @return
+     */
+    private PiazzaResponse sendRequestToDispatcherViaRest(PiazzaJobRequest request) {
+	// REST GET request to Dispatcher to fetch the status of the Job ID.
+	// TODO: I would like a way to normalize this.
+	String id = null, serviceName = null;
+	if (request.jobType instanceof GetJob) {
+	    id = ((GetJob) request.jobType).getJobId();
+	    serviceName = "job";
+	} else if (request.jobType instanceof GetResource) {
+	    id = ((GetResource) request.jobType).getResourceId();
+	    serviceName = "data";
+	}
+	try {
+	    PiazzaResponse dispatcherResponse = new RestTemplate().getForObject(
+		    String.format("http://%s:%s/%s/%s", DISPATCHER_HOST, DISPATCHER_PORT, serviceName, id),
+		    PiazzaResponse.class);
+	    return dispatcherResponse;
+	} catch (RestClientException exception) {
+	    return new ErrorResponse(null, "Error connecting to Dispatcher service: " + exception.getMessage(),
+		    "Gateway");
+	}
+    }
+
+    /**
+     * Forwards the Job request along to the internal Piazza components via
+     * Kafka. This is meant for Jobs that will return a job ID, and are
+     * potentially long-running, and are thus asynchronous.
+     * 
+     * @param request
+     * @param file
+     * @return
+     */
+    private PiazzaResponse sendRequestToDispatcherViaKafka(PiazzaJobRequest request, MultipartFile file) {
+	// Create a GUID for this new Job.
+	String jobId = UUID.randomUUID().toString();
+
+	// If an Ingest job, persist the file to the Amazon S3 filesystem
+	if (request.jobType instanceof IngestJob && file != null) {
+	    try {
+		AmazonS3 client = new AmazonS3Client();
+		client.setEndpoint(AMAZONS3_BUCKET_NAME + AMAZONS3_DOMAIN);
+		client.setRegion(Region.getRegion(Regions.US_EAST_1));
+		client.putObject(AMAZONS3_BUCKET_NAME, file.getOriginalFilename(), file.getInputStream(),
+			new ObjectMetadata());
+	    } catch (AmazonServiceException awsServiceException) {
+		System.out.println("Error Message:    " + awsServiceException.getMessage());
+		System.out.println("HTTP Status Code: " + awsServiceException.getStatusCode());
+		System.out.println("AWS Error Code:   " + awsServiceException.getErrorCode());
+		System.out.println("Error Type:       " + awsServiceException.getErrorType());
+		System.out.println("Request ID:       " + awsServiceException.getRequestId());
+		return new ErrorResponse(null,
+			"Caught an AmazonServiceException, which " + "means your request made it "
+				+ "to Amazon S3, but was rejected with an error response" + " for some reason.",
+			"Gateway");
+
+	    } catch (AmazonClientException awsClientException) {
+		System.out.println("Error Message: " + awsClientException.getMessage());
+		awsClientException.printStackTrace();
+		return new ErrorResponse(null,
+			"Caught an AmazonClientException, which " + "means the client encountered "
+				+ "an internal error while trying to " + "communicate with S3, "
+				+ "such as not being able to access the network.",
+			"Gateway");
+	    } catch (IllegalStateException | IOException exception) {
+		// TODO Auto-generated catch block
+		exception.printStackTrace();
+	    }
 	}
 
-	/**
-	 * Forwards the Job request along to internal Piazza components via
-	 * synchronous REST calls. This is for cases where the Job is meant to be
-	 * processed synchronously and the user wants a response immediately for
-	 * their request.
-	 * 
-	 * @param request
-	 * @return
-	 */
-	private PiazzaResponse sendRequestToDispatcherViaRest(PiazzaJobRequest request) {
-		// REST GET request to Dispatcher to fetch the status of the Job ID.
-		// TODO: I would like a way to normalize this.
-		String id = null, serviceName = null;
-		if (request.jobType instanceof GetJob) {
-			id = ((GetJob) request.jobType).getJobId();
-			serviceName = "job";
-		} else if (request.jobType instanceof GetResource) {
-			id = ((GetResource) request.jobType).getResourceId();
-			serviceName = "data";
-		}
-		try {
-			PiazzaResponse dispatcherResponse = new RestTemplate().getForObject(
-					String.format("http://%s:%s/%s/%s", DISPATCHER_HOST, DISPATCHER_PORT, serviceName, id),
-					PiazzaResponse.class);
-			return dispatcherResponse;
-		} catch (RestClientException exception) {
-			return new ErrorResponse(null, "Error connecting to Dispatcher service: " + exception.getMessage(),
-					"Gateway");
-		}
+	// Create the Kafka Message for an incoming Job to be created.
+	final ProducerRecord<String, String> message;
+	try {
+	    message = JobMessageFactory.getRequestJobMessage(request, jobId);
+	} catch (JsonProcessingException exception) {
+	    return new ErrorResponse(jobId, "Error Creating Message for Job", "Gateway");
 	}
 
-	/**
-	 * Forwards the Job request along to the internal Piazza components via
-	 * Kafka. This is meant for Jobs that will return a job ID, and are
-	 * potentially long-running, and are thus asynchronous.
-	 * 
-	 * @param request
-	 * @param file
-	 * @return
-	 */
-	private PiazzaResponse sendRequestToDispatcherViaKafka(PiazzaJobRequest request, MultipartFile file) {
-		// Create a GUID for this new Job.
-		String jobId = UUID.randomUUID().toString();
+	System.out.println("Requesting Job topic " + message.topic() + " with key " + message.key());
 
-		// If an Ingest job, persist the file to the Amazon S3 filesystem
-		if (request.jobType instanceof IngestJob && file != null) {
-			try {
-				AmazonS3 client = new AmazonS3Client();
-				client.setEndpoint(AMAZONS3_BUCKET_NAME + AMAZONS3_DOMAIN);
-				client.setRegion(Region.getRegion(Regions.US_EAST_1));
-				client.putObject(AMAZONS3_BUCKET_NAME, file.getOriginalFilename(), file.getInputStream(),
-						new ObjectMetadata());
-			} catch (AmazonServiceException awsServiceException) {
-				System.out.println("Error Message:    " + awsServiceException.getMessage());
-				System.out.println("HTTP Status Code: " + awsServiceException.getStatusCode());
-				System.out.println("AWS Error Code:   " + awsServiceException.getErrorCode());
-				System.out.println("Error Type:       " + awsServiceException.getErrorType());
-				System.out.println("Request ID:       " + awsServiceException.getRequestId());
-				return new ErrorResponse(null, "Caught an AmazonServiceException, which "
-						+ "means your request made it " + "to Amazon S3, but was rejected with an error response"
-						+ " for some reason.", "Gateway");
-
-			} catch (AmazonClientException awsClientException) {
-				System.out.println("Error Message: " + awsClientException.getMessage());
-				awsClientException.printStackTrace();
-				return new ErrorResponse(null, "Caught an AmazonClientException, which "
-						+ "means the client encountered " + "an internal error while trying to "
-						+ "communicate with S3, " + "such as not being able to access the network.", "Gateway");
-			} catch (IllegalStateException | IOException exception) {
-				// TODO Auto-generated catch block
-				exception.printStackTrace();
-			}
-		}
-
-		// Create the Kafka Message for an incoming Job to be created.
-		final ProducerRecord<String, String> message;
-		try {
-			message = JobMessageFactory.getRequestJobMessage(request, jobId);
-		} catch (JsonProcessingException exception) {
-			return new ErrorResponse(jobId, "Error Creating Message for Job", "Gateway");
-		}
-
-		System.out.println("Requesting Job topic " + message.topic() + " with key " + message.key());
-
-		// Fire off a Kafka Message and then wait for a ack response from the
-		// kafka broker
-		try {
-			producer.send(message).get();
-		} catch (Exception exception) {
-			return new ErrorResponse(
-					jobId,
-					"The Gateway did not receive a response from Kafka; the request could not be forwarded along to Piazza.",
-					"Gateway");
-		}
-
-		// Respond immediately with the new Job GUID
-		return new PiazzaResponse(jobId);
+	// Fire off a Kafka Message and then wait for a ack response from the
+	// kafka broker
+	try {
+	    producer.send(message).get();
+	} catch (Exception exception) {
+	    return new ErrorResponse(jobId,
+		    "The Gateway did not receive a response from Kafka; the request could not be forwarded along to Piazza.",
+		    "Gateway");
 	}
+
+	// Respond immediately with the new Job GUID
+	return new PiazzaResponse(jobId);
+    }
 }
