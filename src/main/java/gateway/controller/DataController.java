@@ -457,7 +457,7 @@ public class DataController extends PiazzaRestController {
 	@RequestMapping(value = "/file/{dataId}", method = RequestMethod.GET, produces = "application/json")
 	@ApiOperation(value = "Download Data File", notes = "Gets the Bytes of Data loaded into Piazza. Only works for data that is stored internally by Piazza.", tags = "Data")
 	@ApiResponses(value = { @ApiResponse(code = 200, message = "The downloaded data file.", response = Byte[].class) })
-	public ResponseEntity<byte[]> getFile(
+	public ResponseEntity<?> getFile(
 			@ApiParam(value = "The ID of the Data to download.", required = true) @PathVariable(value = "dataId") String dataId,
 			@ApiParam(value = "Specify the name of the file that the user wishes to retrieve the data as. This will set the content-disposition header.") @RequestParam(value = "fileName", required = false) String fileName,
 			Principal user) throws Exception {
@@ -472,10 +472,18 @@ public class DataController extends PiazzaRestController {
 			if ((fileName != null) && (fileName.isEmpty() == false)) {
 				url = String.format("%s?fileName=%s", url, fileName);
 			}
-			ResponseEntity<byte[]> accessResponse = restTemplate.getForEntity(url, byte[].class);
 
-			// Stream the bytes back
-			return accessResponse;
+			ResponseEntity<?> accessResponse = restTemplate.getForEntity(url, byte[].class);
+			if(accessResponse.getStatusCode()==HttpStatus.NO_CONTENT)
+			{
+				String error = String.format("File not found");
+				throw new Exception(error);
+			}
+			else
+			{
+				// Stream the bytes back
+				return accessResponse;
+			}
 		} catch (Exception exception) {
 			exception.printStackTrace();
 			String error = String.format("Error downloading file for Data %s by user %s: %s", dataId,
