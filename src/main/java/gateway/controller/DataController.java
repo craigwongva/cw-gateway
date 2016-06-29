@@ -478,11 +478,6 @@ public class DataController extends PiazzaRestController {
 			if ((fileName != null) && (fileName.isEmpty() == false)) {
 				url = String.format("%s?fileName=%s", url, fileName);
 			}
-//			ResponseEntity<byte[]> accessResponse = restTemplate.getForEntity(url, byte[].class);
-//
-//			// Stream the bytes back
-//			return accessResponse;
-//			
 
 			ResponseEntity<?> accessResponse = restTemplate.getForEntity(url, byte[].class);
 			if (accessResponse.getStatusCode() == HttpStatus.NO_CONTENT) {
