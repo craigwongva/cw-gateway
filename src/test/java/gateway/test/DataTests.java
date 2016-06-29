@@ -357,7 +357,7 @@ public class DataTests {
 		when(restTemplate.getForEntity(anyString(), eq(byte[].class))).thenReturn(mockResponse);
 
 		// Test
-		ResponseEntity<byte[]> entity = dataController.getFile("123456", "test.txt", user);
+		ResponseEntity<byte[]> entity = (ResponseEntity<byte[]>) dataController.getFile("123456", "test.txt", user);
 
 		// Verify
 		assertTrue(entity.getStatusCode().equals(HttpStatus.OK));
@@ -366,7 +366,7 @@ public class DataTests {
 		// Test an Exception
 		when(restTemplate.getForEntity(anyString(), eq(byte[].class))).thenThrow(new RestClientException(""));
 		try {
-			entity = dataController.getFile("123456", "test.txt", user);
+			entity = (ResponseEntity<byte[]>) dataController.getFile("123456", "test.txt", user);
 		} catch (Exception exception) {
 			assertTrue(exception.getMessage().contains("Error downloading file"));
 		}
