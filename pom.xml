@@ -8,7 +8,9 @@
 	<version>0.1.0</version>
 
 	<packaging>${packaging}</packaging>
-
+<properties>
+<build.number>coffee</build.number>
+</properties>
 	<parent>
 		<groupId>org.springframework.boot</groupId>
 		<artifactId>spring-boot-starter-parent</artifactId>
@@ -143,11 +145,36 @@
    </manifest>
    <archive>
     <manifestEntries>
-     <Build-User>Dusty Baker</Build-User>
+     <Build-User>${build.number}</Build-User>
     </manifestEntries>
    </archive>
   </configuration>
  </plugin>
+<plugin>
+    <groupId>org.apache.maven.plugins</groupId>
+    <artifactId>maven-assembly-plugin</artifactId>
+    <version>2.4</version>
+    <configuration>
+        <archive>
+            <manifest>  
+                <addClasspath>true</addClasspath>
+            </manifest>
+            <manifestEntries>
+                <Build-Time>${maven.build.timestamp}</Build-Time>
+            </manifestEntries>
+            <manifestSections>
+                <manifestSection>
+                    <name>${build.manifest.section}</name>
+                    <manifestEntries>
+                        <Implementation-Title>${project.name}</Implementation-Title>
+                        <Implementation-Version>${project.version}</Implementation-Version>
+                        <Implementation-Build-Number>${build.number}</Implementation-Build-Number>
+                    </manifestEntries>
+                </manifestSection>
+            </manifestSections>
+        </archive>
+    </configuration>
+</plugin>
 		</plugins>
 	</build>
 
